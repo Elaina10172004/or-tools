@@ -545,6 +545,40 @@ TEST(LinearProgramTest, GetTransposeSparseMatrix) {
   EXPECT_EQ(RowIndex(1), linear_program.GetTransposeSparseMatrix().num_rows());
 }
 
+TEST(LinearProgramTest, TransposeRespectsCoefficientOverwrites) {
+  LinearProgram lp;
+  const ColIndex x = lp.CreateNewVariable();
+  const ColIndex y = lp.CreateNewVariable();
+  const RowIndex r = lp.CreateNewConstraint();
+  lp.SetCoefficient(r, x, 1);
+  lp.SetCoefficient(r, x, 3);
+  lp.SetCoefficient(r, y, 2);
+  lp.SetCoefficient(r, y, 0);
+
+  ASSERT_FALSE(lp.IsCleanedUp());
+  const SparseMatrix& transpose = lp.GetTransposeSparseMatrix();
+  EXPECT_TRUE(transpose.IsCleanedUp());
+  EXPECT_EQ(transpose.num_entries(), EntryIndex(1));
+  const SparseColumn& column = transpose.column(RowToColIndex(r));
+  EXPECT_EQ(column.LookUpCoefficient(ColToRowIndex(x)), 3);
+  EXPECT_FALSE(lp.IsCleanedUp());
+
+  // Mutable transpose edits are discarded unless explicitly committed.
+  lp.SetCoefficient(r, x, 5);
+  SparseMatrix* editable = lp.GetMutableTransposeSparseMatrix();
+  const ColIndex transpose_col = RowToColIndex(r);
+  EXPECT_EQ(editable->column(transpose_col).LookUpCoefficient(ColToRowIndex(x)),
+            5);
+  editable->mutable_column(transpose_col)->Clear();
+  EXPECT_EQ(lp.GetTransposeSparseMatrix().num_entries(), EntryIndex(1));
+  EXPECT_FALSE(lp.IsCleanedUp());
+
+  lp.GetMutableTransposeSparseMatrix()->mutable_column(transpose_col)->Clear();
+  lp.UseTransposeMatrixAsReference();
+  EXPECT_TRUE(lp.IsCleanedUp());
+  EXPECT_EQ(lp.GetSparseMatrix().num_entries(), EntryIndex(0));
+}
+
 TEST(LinearProgramTest, GetMutableTransposeSparseMatrix) {
   LinearProgram lp;
   for (int i = 0; i < 2; ++i) {

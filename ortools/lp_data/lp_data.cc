@@ -383,7 +383,16 @@ LinearProgram::VariableType LinearProgram::GetVariableType(ColIndex col) const {
 
 const SparseMatrix& LinearProgram::GetTransposeSparseMatrix() const {
   if (!transpose_matrix_is_consistent_) {
-    transpose_matrix_.PopulateFromTranspose(matrix_);
+    if (IsCleanedUp()) {
+      transpose_matrix_.PopulateFromTranspose(matrix_);
+    } else {
+      // SetCoefficient() appends entries. Resolve overwrites and zeros on a
+      // copy so that reading the transpose does not modify the source matrix.
+      SparseMatrix clean_matrix;
+      clean_matrix.PopulateFromSparseMatrix(matrix_);
+      clean_matrix.CleanUp();
+      transpose_matrix_.PopulateFromTranspose(clean_matrix);
+    }
     transpose_matrix_is_consistent_ = true;
   }
   DCHECK_EQ(transpose_matrix_.num_rows().value(), matrix_.num_cols().value());
@@ -392,9 +401,7 @@ const SparseMatrix& LinearProgram::GetTransposeSparseMatrix() const {
 }
 
 SparseMatrix* LinearProgram::GetMutableTransposeSparseMatrix() {
-  if (!transpose_matrix_is_consistent_) {
-    transpose_matrix_.PopulateFromTranspose(matrix_);
-  }
+  GetTransposeSparseMatrix();
   // This enables a client to start modifying the matrix and then abort and not
   // call UseTransposeMatrixAsReference(). Then, the other client of
   // GetTransposeSparseMatrix() will still see the correct matrix.
